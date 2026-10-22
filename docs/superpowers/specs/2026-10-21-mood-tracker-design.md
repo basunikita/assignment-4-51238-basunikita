@@ -78,7 +78,10 @@ A simple landing page shows the app's name, one line on what it does, and Clerk'
 
 ## The Art Institute of Chicago API: what was verified on 2026-10-21
 
-- **Base URL:** `https://api.artic.edu/api/v1`. No API key is needed. Requests sent an `AIC-User-Agent` header naming the app, which is the museum's documented way for apps to identify themselves. The docs page itself was behind a bot check, so this wasn't re-read.
+- **Base URL:** `https://api.artic.edu/api/v1`. No API key is needed.
+- **The `AIC-User-Agent` header is required in practice.** This was re-checked later on 2026-10-21. Script requests that sent `AIC-User-Agent: <app name>` all worked, including image requests. The same requests without the header got a Cloudflare challenge (HTTP 403, `cf-mitigated: challenge`). A browser can't send that header to another site without first sending a pre-check (`OPTIONS`) request, and the pre-check got the challenge too. Responses do allow any site to read them (`access-control-allow-origin: *`). So a browser could make a plain request with no extra headers, but that hasn't been tried from a real browser.
+- **Counting:** `limit=0` returns `pagination.total` with no artworks (668 for the filter below). Asking for a page past the end returns HTTP 403 with `{"status":403,"error":"Invalid number of results",...}`.
+- **Search as GET:** the Elasticsearch query also works as a `params` query parameter holding the JSON, alongside `limit`, `page` and `fields`.
 - **Search:** `POST /artworks/search` with a JSON body. The body takes an Elasticsearch `query`, `fields`, `limit` and `page`.
 - **Filter for the pool of paintings:**
   - `is_public_domain` is true
@@ -89,8 +92,8 @@ A simple landing page shows the app's name, one line on what it does, and Clerk'
 - **Random doesn't work as expected:** a `function_score` query with `random_score` ignored its seed. Seeds 1, 999, 12345 and 424242 all returned the same paintings in the same order. Asking for a random `page` does return different paintings. The builder chooses how to draw four distinct random paintings, for example four `limit=1` requests on random pages, or one larger page and four picked from it. Four consecutive results from one random page (`limit=4`) would only ever produce 167 fixed groups of four, so avoid that.
 - **Fields the app needs:** `id`, `title`, `artist_display` or `artist_title`, `date_display`, `image_id`, `thumbnail.alt_text`, `color` (`h`, `s`, `l`), and `is_public_domain`. It also needs `config.iiif_url` from the response.
 - **Image links:** `{iiif_url}/{image_id}/full/{width},/0/default.jpg`. The mockups used 400 wide for the pick screen and hover card, and 200 wide for tiny squares. 843 is the museum's usual large size.
-- **The image server blocks bots.** Image requests from curl and from an automated browser got a Cloudflare challenge or "you have been blocked". The student's own browser loads them fine. So **images must load straight from the museum into the visitor's browser** through plain `<img>` tags, or `next/image` with `unoptimized`. They must never go through the app's server or the Next.js image optimizer, which fetches images on the server.
-- **Data API from a server:** JSON requests to `api.artic.edu/api/v1` from curl on this laptop worked. Requests from Vercel's servers have not been tried. This matters for Step 6.
+- **The image server blocks bots.** Image requests from curl without the header, and from an automated browser, got a Cloudflare challenge or "you have been blocked". The student's own browser loads them fine. So **images must load straight from the museum into the visitor's browser** through plain `<img>` tags, or `next/image` with `unoptimized`. They must never go through the app's server or the Next.js image optimizer, which fetches images on the server.
+- **Data API from a server:** JSON requests with the header from curl on this laptop worked. Requests from Vercel's servers have not been tried. This matters for Step 6.
 - **"Nothing found":** a keyword search (`q=`) never comes back empty. A made-up word returned all 133,169 artworks with near-zero relevance scores. An empty result only comes from filters. An unknown artwork ID returns HTTP 404 with `{"status":404,"error":"Not found",...}`.
 - **License:** all data is CC0 except the `description` field, which is CC-BY. The app doesn't use `description`.
 
