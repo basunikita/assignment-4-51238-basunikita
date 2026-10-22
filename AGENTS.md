@@ -42,4 +42,32 @@ There are no update or delete policies, so nobody can change or remove a pick. S
 
 ## Commands
 
-These get filled in when the Next.js app is created (Task 2 of the build plan).
+- `npm run dev`: the app at http://localhost:3000
+- `npm run build`: production build
+- `npm run lint`: ESLint
+- `npm test`: library tests with `node --test` (tests in `tests/*.test.mjs` import `lib/*.ts` directly, so `lib/` uses only erasable TypeScript: no `enum`, no parameter properties)
+
+### Installing packages on the IMC network
+
+Public npm is blocked there. Install through IMC's mirror with per-command settings only, and never change `~/.npmrc`:
+
+```bash
+npm_config_registry=https://imc-npm-proxy.trading.imc.intra/repository/npm-proxy/ NODE_USE_SYSTEM_CA=1 npm install <package>
+```
+
+Then point the lockfile back at the public registry, so Vercel and classmates can install. The tarballs and checksums are identical:
+
+```bash
+sed -i '' 's#https://imc-npm-proxy.trading.imc.intra/repository/npm-proxy/#https://registry.npmjs.org/#g' package-lock.json
+grep -c 'imc-npm-proxy' package-lock.json   # must print 0
+```
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
