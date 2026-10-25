@@ -29,6 +29,8 @@ Row-level security is on, with two policies. Both apply only to signed-in people
 
 There are no update or delete policies, so nobody can change or remove a pick. Signed-out visitors (the `anon` role) have no policy at all, so they see nothing.
 
+Table privileges match the policies. `authenticated` has only `SELECT` and `INSERT` on `picks`, and `anon` has nothing. Supabase grants every privilege by default, including `TRUNCATE`, which row-level security doesn't cover, so `supabase/migrations/*_restrict_picks_grants.sql` revokes the rest. Migrations are applied with the Supabase MCP server's `apply_migration`, and each file is named with the version Supabase records.
+
 ## Rules
 
 - **Keys live only in `.env.local`, which the student writes.**
