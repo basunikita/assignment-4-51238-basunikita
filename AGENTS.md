@@ -48,6 +48,10 @@ Table privileges match the policies. `authenticated` has only `SELECT` and `INSE
 - `npm run build`: production build
 - `npm run lint`: ESLint
 - `npm test`: library tests with `node --test` (tests in `tests/*.test.mjs` import `lib/*.ts` directly, so `lib/` uses only erasable TypeScript: no `enum`, no parameter properties)
+- `npm run e2e`: the Playwright privacy test in `e2e/`.
+  - It starts its own app on port 3100 against `e2e/fake-museum.mjs`.
+  - It signs in the two Clerk test users named by `E2E_USER_A_EMAIL` and `E2E_USER_B_EMAIL` in `.env.local`.
+  - Stop `npm run dev` first, because Next allows only one dev server per project.
 
 ### Installing packages on the IMC network
 
