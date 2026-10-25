@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AIC_USER_AGENT,
+  colorCss,
   distinctRandomPositions,
   fetchFourPaintings,
   imageUrl,
@@ -36,6 +37,11 @@ function fakeMuseum({ total = 668, respond } = {}) {
 
 test("an image link points at the museum's image server", () => {
   assert.equal(imageUrl("abc", 200), "https://www.artic.edu/iiif/2/abc/full/200,/0/default.jpg");
+});
+
+test("a painting's main color becomes CSS, and a missing one becomes grey", () => {
+  assert.equal(colorCss({ h: 176, s: 18, l: 46 }), "hsl(176 18% 46%)");
+  assert.equal(colorCss(null), "hsl(0 0% 75%)");
 });
 
 test("an artwork becomes a painting", () => {

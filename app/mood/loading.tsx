@@ -1,3 +1,9 @@
+import FindingPaintings from "./FindingPaintings";
+
 export default function MoodLoading() {
-  return <p className="m-auto px-4 text-center text-zinc-500">Loading…</p>;
+  return (
+    <main className="flex flex-1 flex-col items-center px-4 pt-[72px] pb-12">
+      <FindingPaintings />
+    </main>
+  );
 }

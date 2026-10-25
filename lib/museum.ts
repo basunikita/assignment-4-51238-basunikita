@@ -36,6 +36,10 @@ export function imageUrl(imageId: string, width: 200 | 400): string {
   return `${IIIF_BASE}/${imageId}/full/${width},/0/default.jpg`;
 }
 
+export function colorCss(color: Painting["color"]): string {
+  return color ? `hsl(${color.h} ${color.s}% ${color.l}%)` : "hsl(0 0% 75%)";
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
