@@ -32,8 +32,44 @@ const PAINTING_FIELDS = "id,title,artist_title,artist_display,date_display,image
 
 type SearchBody = { pagination?: { total?: unknown }; data?: unknown[] };
 
+const MUSEUM_IMAGE_ID = /^[A-Za-z0-9-]{1,100}$/;
+const IMAGE_WIDTHS = ["200", "400"];
+const ONE_YEAR_SECONDS = 31536000;
+
+export function isMuseumImageId(value: unknown): value is string {
+  return typeof value === "string" && MUSEUM_IMAGE_ID.test(value);
+}
+
+// Images come through the app's own /art route: the museum's image server
+// challenges any request without the AIC-User-Agent header, and a browser's
+// <img> can neither add the header nor pass the challenge.
 export function imageUrl(imageId: string, width: 200 | 400): string {
-  return `${IIIF_BASE}/${imageId}/full/${width},/0/default.jpg`;
+  return `/art/${imageId}/${width}`;
+}
+
+export async function fetchMuseumImage(
+  imageId: string,
+  width: string,
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+): Promise<Response> {
+  const { fetchImpl = fetch, timeoutMs = 8000 } = options;
+  if (!isMuseumImageId(imageId) || !IMAGE_WIDTHS.includes(width)) return new Response(null, { status: 404 });
+
+  const unavailable = () => new Response(null, { status: 502, headers: { "Cache-Control": "no-store" } });
+  try {
+    const upstream = await fetchImpl(`${IIIF_BASE}/${imageId}/full/${width},/0/default.jpg`, {
+      headers: { "AIC-User-Agent": AIC_USER_AGENT },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const contentType = upstream.headers.get("content-type") ?? "";
+    if (!upstream.ok || !contentType.startsWith("image/")) return unavailable();
+    // A museum image at a given ID and size never changes, so browsers and Vercel can keep it.
+    return new Response(upstream.body, {
+      headers: { "Content-Type": contentType, "Cache-Control": `public, max-age=${ONE_YEAR_SECONDS}, immutable` },
+    });
+  } catch {
+    return unavailable();
+  }
 }
 
 export function colorCss(color: Painting["color"]): string {

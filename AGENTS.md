@@ -37,7 +37,7 @@ Table privileges match the policies. `authenticated` has only `SELECT` and `INSE
   - Never read, print or search a `.env` file by any means. The deny rule in `.claude/settings.json` blocks the Read tool, and `cat`, `grep`, `head` and the like are just as off-limits.
   - No Supabase secret or service-role key is used anywhere.
 - **The museum API is called only from the server.** Every request to `https://api.artic.edu/api/v1` sends `AIC-User-Agent: Mood Tracker (MPCS 51238 class project)`. The museum blocks requests without that header, and browsers can't send it to another site.
-- **Museum images load only in the visitor's browser,** through a plain `<img>` from `https://www.artic.edu/iiif/2/...`. They never go through the server or the Next.js image optimizer, because the image server blocks both.
+- **Museum images load through the app's own route, `/art/{image_id}/{width}`** (built by `imageUrl()` in `lib/museum.ts`). The route fetches from `https://www.artic.edu/iiif/2/...` with the `AIC-User-Agent` header, because the image server challenges every request without it, including a page's `<img>`. It serves the image with a one-year immutable cache and accepts only museum image IDs at widths 200 and 400. Pages use a plain `<img>`, never the Next.js image optimizer, which can't send the header.
 - **Queries on `picks` never filter by `user_id` in code.** Row-level security does that, and the Playwright privacy test only proves something because of it.
 - **Read the docs first.** Before writing Next.js routing, auth gating, server actions or caching code, read the matching guide in `node_modules/next/dist/docs/`.
 - **Commits and pushes.** Each commit names the handout step it belongs to. Push only when the student says so.

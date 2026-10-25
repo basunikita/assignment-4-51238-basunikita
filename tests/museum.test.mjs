@@ -5,7 +5,9 @@ import {
   colorCss,
   distinctRandomPositions,
   fetchFourPaintings,
+  fetchMuseumImage,
   imageUrl,
+  isMuseumImageId,
   toPainting,
 } from "../lib/museum.ts";
 
@@ -35,8 +37,17 @@ function fakeMuseum({ total = 668, respond } = {}) {
   return { calls, fetchImpl };
 }
 
-test("an image link points at the museum's image server", () => {
-  assert.equal(imageUrl("abc", 200), "https://www.artic.edu/iiif/2/abc/full/200,/0/default.jpg");
+test("an image link points at the app's own image route", () => {
+  assert.equal(imageUrl("abc", 200), "/art/abc/200");
+});
+
+test("isMuseumImageId accepts the museum's IDs and rejects anything else", () => {
+  assert.equal(isMuseumImageId("8be90e71-83c3-3f98-a972-4acb9ce0e773"), true);
+  assert.equal(isMuseumImageId("../x"), false);
+  assert.equal(isMuseumImageId("a/b"), false);
+  assert.equal(isMuseumImageId(""), false);
+  assert.equal(isMuseumImageId("x".repeat(101)), false);
+  assert.equal(isMuseumImageId(42), false);
 });
 
 test("a painting's main color becomes CSS, and a missing one becomes grey", () => {
@@ -181,4 +192,78 @@ test("a museum that never answers is unavailable after the timeout", async () =>
   });
   const result = await fetchFourPaintings({ fetchImpl: museum.fetchImpl, timeoutMs: 50 });
   assert.deepEqual(result, { status: "unavailable" });
+});
+
+const IMAGE_ID = "8be90e71-83c3-3f98-a972-4acb9ce0e773";
+const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+
+function fakeImageServer(respond = () => new Response(JPEG_BYTES, { headers: { "content-type": "image/jpeg" } })) {
+  const calls = [];
+  async function fetchImpl(url, init = {}) {
+    calls.push({ url: String(url), headers: new Headers(init.headers) });
+    return respond(url, init);
+  }
+  return { calls, fetchImpl };
+}
+
+test("an image request asks the museum's image server with the AIC-User-Agent header", async () => {
+  const server = fakeImageServer();
+  await fetchMuseumImage(IMAGE_ID, "400", { fetchImpl: server.fetchImpl });
+  assert.equal(server.calls.length, 1);
+  assert.equal(server.calls[0].url, `https://www.artic.edu/iiif/2/${IMAGE_ID}/full/400,/0/default.jpg`);
+  assert.equal(server.calls[0].headers.get("AIC-User-Agent"), AIC_USER_AGENT);
+});
+
+test("a museum image is passed on with a long-lived cache", async () => {
+  const response = await fetchMuseumImage(IMAGE_ID, "200", { fetchImpl: fakeImageServer().fetchImpl });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/jpeg");
+  assert.equal(response.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), JPEG_BYTES);
+});
+
+test("an image ID that isn't the museum's is refused without asking the museum", async () => {
+  const server = fakeImageServer();
+  const response = await fetchMuseumImage("..%2F..%2Fsecret", "200", { fetchImpl: server.fetchImpl });
+  assert.equal(response.status, 404);
+  assert.equal(server.calls.length, 0);
+});
+
+test("only the two sizes the app uses are allowed", async () => {
+  const server = fakeImageServer();
+  const response = await fetchMuseumImage(IMAGE_ID, "843", { fetchImpl: server.fetchImpl });
+  assert.equal(response.status, 404);
+  assert.equal(server.calls.length, 0);
+});
+
+test("a Cloudflare challenge becomes a 502 that isn't cached", async () => {
+  const server = fakeImageServer(
+    () => new Response("<!DOCTYPE html><title>Just a moment...</title>", { status: 403, headers: { "content-type": "text/html" } }),
+  );
+  const response = await fetchMuseumImage(IMAGE_ID, "200", { fetchImpl: server.fetchImpl });
+  assert.equal(response.status, 502);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+});
+
+test("an answer that isn't an image is a 502", async () => {
+  const server = fakeImageServer(() => new Response("<html>maintenance</html>", { headers: { "content-type": "text/html" } }));
+  assert.equal((await fetchMuseumImage(IMAGE_ID, "200", { fetchImpl: server.fetchImpl })).status, 502);
+});
+
+test("a network error on an image is a 502", async () => {
+  const server = fakeImageServer(() => {
+    throw new TypeError("fetch failed");
+  });
+  assert.equal((await fetchMuseumImage(IMAGE_ID, "200", { fetchImpl: server.fetchImpl })).status, 502);
+});
+
+test("an image server that never answers is a 502 after the timeout", async () => {
+  const server = fakeImageServer(
+    (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(init.signal.reason));
+      }),
+  );
+  const response = await fetchMuseumImage(IMAGE_ID, "200", { fetchImpl: server.fetchImpl, timeoutMs: 50 });
+  assert.equal(response.status, 502);
 });

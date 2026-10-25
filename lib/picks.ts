@@ -1,4 +1,4 @@
-import type { Painting } from "./museum.ts";
+import { isMuseumImageId, type Painting } from "./museum.ts";
 
 export type SavedPick = Painting & { id: number; pickedAt: string };
 
@@ -20,7 +20,6 @@ export const PICK_COLUMNS =
   "id, artwork_id, title, artist, date_display, image_id, alt_text, color_h, color_s, color_l, picked_at";
 
 const MAX_TEXT_LENGTH = 1000;
-const MUSEUM_IMAGE_ID = /^[A-Za-z0-9-]{1,100}$/;
 
 export function fromRow(row: PickRow): SavedPick {
   const hasColor = row.color_h !== null && row.color_s !== null && row.color_l !== null;
@@ -78,8 +77,7 @@ export function isPainting(value: unknown): value is Painting {
     isText(p.title) &&
     isText(p.artist) &&
     isOptionalText(p.dateDisplay) &&
-    typeof p.imageId === "string" &&
-    MUSEUM_IMAGE_ID.test(p.imageId) &&
+    isMuseumImageId(p.imageId) &&
     isOptionalText(p.altText) &&
     isColor(p.color)
   );

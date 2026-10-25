@@ -36,7 +36,7 @@ The student is iterating through the handout with the agent, so the plan stops a
 - **Hover card:** shows the bigger image, title, artist, the work's date, and `Picked Wed, Oct 21, 2026 · 9:15 AM` in the visitor's time zone. Tapping a square shows the same card. While an image loads, its square uses the painting's main color, `hsl(h, s%, l%)`.
 - **Museum API:**
   - Every request to `https://api.artic.edu/api/v1` sends `AIC-User-Agent: Mood Tracker (MPCS 51238 class project)`, and only from the server.
-  - Images load straight in the visitor's browser from `https://www.artic.edu/iiif/2/{image_id}/full/{width},/0/default.jpg` through a plain `<img>`, never through the server or `next/image` optimization.
+  - ~~Images load straight in the visitor's browser~~ (superseded 2026-10-25): images load through the app's own route, `/art/{image_id}/{width}`. That route fetches `https://www.artic.edu/iiif/2/{image_id}/full/{width},/0/default.jpg` with the `AIC-User-Agent` header and serves it with a one-year immutable cache. It accepts only museum image IDs and the widths 200 and 400. Pages use a plain `<img>`, never `next/image` optimization.
   - Widths: 200 for grid squares, 400 for the pick screen and hover card.
 - **Painting pool:** `is_public_domain` is true, `image_id` exists, and `classification_title.keyword` is `painting`.
 - **Picks queries:** reads of `picks` never filter by `user_id` in code. Row-level security does it, and the Step 7 test only proves something because of that.
