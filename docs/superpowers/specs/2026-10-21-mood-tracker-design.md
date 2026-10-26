@@ -48,7 +48,7 @@ A simple landing page shows the app's name, one line on what it does, and Clerk'
 
 ### Opening the app: the pick screen (decided)
 
-- **Every time you open the app, you must pick a mood before you see anything else.** Loading or refreshing the page counts as opening it (accepted). Switching back to a browser tab that is already open does not (accepted).
+- **Every time you open the app, you must pick a mood before you see anything else.** Loading or refreshing the page counts as opening it (accepted). Switching back to a browser tab that is already open does not (accepted). The one exception: when the museum is down or sends back too few paintings, you can open your grid without picking (decided 2026-10-25; see the history grid).
 - Opening the app twice in ten minutes means two picks. That is intended.
 - Four random paintings, not six (decided).
 - Each painting is shown whole, not cropped, because cropping changes the painting (accepted). There's no title or artist, so you pick by feel (accepted).
@@ -74,7 +74,7 @@ A simple landing page shows the app's name, one line on what it does, and Clerk'
   - the date and time you picked it, for example "Picked Wed, Oct 21, 2026 · 9:15 AM"
 - On touch screens, tapping a square shows the same card (accepted).
 - While a tiny picture loads, its square is filled with the painting's main color from the API's `color` field (accepted).
-- The grid is only reachable after a pick in the current visit, so it always has at least one picture.
+- Normally the grid is reachable only after a pick in the current visit. When the museum is down, the pick screen also offers **See your grid**, which shows your picks without saving one (decided 2026-10-25). The "nothing found" screen offers it too, since you can't pick there either (my call). In that case the newest square isn't outlined, and someone with no picks yet sees `No picks yet.`
 
 ## The Art Institute of Chicago API: what was verified on 2026-10-21
 
@@ -92,7 +92,12 @@ A simple landing page shows the app's name, one line on what it does, and Clerk'
 - **Random doesn't work as expected:** a `function_score` query with `random_score` ignored its seed. Seeds 1, 999, 12345 and 424242 all returned the same paintings in the same order. Asking for a random `page` does return different paintings. The builder chooses how to draw four distinct random paintings, for example four `limit=1` requests on random pages, or one larger page and four picked from it. Four consecutive results from one random page (`limit=4`) would only ever produce 167 fixed groups of four, so avoid that.
 - **Fields the app needs:** `id`, `title`, `artist_display` or `artist_title`, `date_display`, `image_id`, `thumbnail.alt_text`, `color` (`h`, `s`, `l`), and `is_public_domain`. It also needs `config.iiif_url` from the response.
 - **Image links:** `{iiif_url}/{image_id}/full/{width},/0/default.jpg`. The mockups used 400 wide for the pick screen and hover card, and 200 wide for tiny squares. 843 is the museum's usual large size.
-- **The image server blocks bots.** Image requests from curl without the header, and from an automated browser, got a Cloudflare challenge or "you have been blocked". The student's own browser loads them fine. So **images must load straight from the museum into the visitor's browser** through plain `<img>` tags, or `next/image` with `unoptimized`. They must never go through the app's server or the Next.js image optimizer, which fetches images on the server.
+- **The image server challenges any request without the header, including `<img>` tags in a page.** This was corrected on 2026-10-25, after real paintings didn't appear in the student's browser.
+  - From the IMC network, image requests without `AIC-User-Agent` get a Cloudflare challenge (403, `cf-mitigated: challenge`). That includes a request shaped exactly like a browser loading an image.
+  - With the header, the same request returns the JPEG.
+  - Opening an image's link directly worked earlier because a full page can complete the challenge. An `<img>` in a page can't, and it can't add the header either.
+  - So **images load through the app's own route, `/art/{image_id}/{width}`** (decided by the student). The route fetches from the museum with the header and passes the image on with a one-year immutable cache, so browsers and Vercel keep each image after the first request. It accepts only museum image IDs and the widths 200 and 400, so it can't be used to fetch anything else.
+  - The Next.js image optimizer still isn't used: it can't send the header.
 - **Data API from a server:** JSON requests with the header from curl on this laptop worked. Requests from Vercel's servers have not been tried. This matters for Step 6.
 - **"Nothing found":** a keyword search (`q=`) never comes back empty. A made-up word returned all 133,169 artworks with near-zero relevance scores. An empty result only comes from filters. An unknown artwork ID returns HTTP 404 with `{"status":404,"error":"Not found",...}`.
 - **License:** all data is CC0 except the `description` field, which is CC-BY. The app doesn't use `description`.
@@ -157,6 +162,12 @@ A simple landing page shows the app's name, one line on what it does, and Clerk'
 
 - **Step 2, the data model.** Is one `picks` table enough, or is a second table worth having? Does each pick store a copy of the painting's display fields (title, artist, date, `image_id`, color), so the grid shows without asking the API for every square, or only the artwork ID? My recommendation: one `picks` table with a copy of the display fields, because the grid can hold hundreds of squares. That is still for the student to agree to in Step 2.
 - **Step 6, the API.** Is the API called in the browser or on the server? Also: what the pick screen shows while the four paintings load, what happens if fewer than four come back, and what happens when the museum's API is down. Because picking can't be skipped, the API-down case has to decide whether you can still reach your grid.
+  - **Decided 2026-10-25:**
+    - The API is called from the server.
+    - Loading shows four placeholder squares and `Finding four paintings…`.
+    - Nothing found shows `The museum didn't send back enough paintings.` with Try again.
+    - Museum down shows `The museum's collection isn't answering right now.` with Try again.
+    - In both of those states, you can still see your grid.
 
 ## Left to the builder
 

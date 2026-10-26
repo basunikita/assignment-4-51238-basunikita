@@ -36,7 +36,7 @@ The student is iterating through the handout with the agent, so the plan stops a
 - **Hover card:** shows the bigger image, title, artist, the work's date, and `Picked Wed, Oct 21, 2026 · 9:15 AM` in the visitor's time zone. Tapping a square shows the same card. While an image loads, its square uses the painting's main color, `hsl(h, s%, l%)`.
 - **Museum API:**
   - Every request to `https://api.artic.edu/api/v1` sends `AIC-User-Agent: Mood Tracker (MPCS 51238 class project)`, and only from the server.
-  - Images load straight in the visitor's browser from `https://www.artic.edu/iiif/2/{image_id}/full/{width},/0/default.jpg` through a plain `<img>`, never through the server or `next/image` optimization.
+  - ~~Images load straight in the visitor's browser~~ (superseded 2026-10-25): images load through the app's own route, `/art/{image_id}/{width}`. That route fetches `https://www.artic.edu/iiif/2/{image_id}/full/{width},/0/default.jpg` with the `AIC-User-Agent` header and serves it with a one-year immutable cache. It accepts only museum image IDs and the widths 200 and 400. Pages use a plain `<img>`, never `next/image` optimization.
   - Widths: 200 for grid squares, 400 for the pick screen and hover card.
 - **Painting pool:** `is_public_domain` is true, `image_id` exists, and `classification_title.keyword` is `painting`.
 - **Picks queries:** reads of `picks` never filter by `user_id` in code. Row-level security does it, and the Step 7 test only proves something because of that.
@@ -314,6 +314,8 @@ git commit -m "Step 5: picks table in Supabase with row-level security, connecte
 
   Update this task and Task 8 to match their answers.
 
+  **Decided 2026-10-25:** keep the defaults, except that you can see your grid when the museum is down. The nothing-found state offers it too (my call). Tasks 7 and 8 below include this.
+
 - [ ] **Step 2: 🎓 Ask your agent.** "Draw a diagram of one request, from the click to the screen: the browser, my server, Clerk, Supabase, and the API."
 
 - [ ] **Step 3: Write the failing tests in `tests/museum.test.mjs`.**
@@ -389,8 +391,9 @@ git commit -m "Step 6: draw four random public-domain paintings from the museum,
   - `toInsert(painting: Painting): Omit<PickRow, 'id' | 'picked_at'>`
   - `isPainting(value: unknown): value is Painting`
 - Produces, from `app/mood/actions.ts` (`'use server'`):
-  - `savePick(choice: Painting): Promise<SavePickResult>`
-  - `type SavePickResult = { ok: true; picks: SavedPick[] } | { ok: false; message: string }`
+  - `savePick(choice: Painting): Promise<PicksResult>`
+  - `loadPicks(): Promise<PicksResult>`, for seeing your grid when the museum is down
+  - `type PicksResult = { ok: true; picks: SavedPick[] } | { ok: false; message: string }`
 
 - [ ] **Step 1: Write the failing tests in `tests/picks.test.mjs`.**
 
@@ -422,6 +425,8 @@ test("isPainting rejects a title or artist longer than 1000 characters", ...);
   4. Select every column from `picks`, ordered by `picked_at` then `id`, ascending. **Don't filter by `user_id`.**
   5. Return `{ ok: true, picks: rows.map(fromRow) }`.
 
+  `loadPicks()` repeats steps 1, 4 and 5 without the insert. On no session, it returns `{ ok: false, message: "Your session ended. Sign in again to see your picks." }`. On a select error, it returns `{ ok: false, message: "Your picks couldn't be loaded." }`. Steps 4 and 5 are shared by both functions.
+
 - [ ] **Step 6: Verify.** `npm run build` passes. The end-to-end proof comes in Task 9.
 
 - [ ] **Step 7: Commit**
@@ -450,9 +455,9 @@ git commit -m "Save a pick and read back the history, relying on row-level secur
   - `lib/format.ts`:
     - `formatPickedAt(iso: string, timeZone?: string): string`
   - `lib/mood-flow.ts`:
-    - `type FlowState = { step: 'picking' } | { step: 'saving'; choice: Painting } | { step: 'history'; picks: SavedPick[] } | { step: 'save-failed'; choice: Painting; message: string }`
-    - `type FlowAction = { type: 'pick'; painting: Painting } | { type: 'saved'; picks: SavedPick[] } | { type: 'save-failed'; message: string } | { type: 'retry' }`
-    - `flowReducer(state: FlowState, action: FlowAction): FlowState`
+    - `type FlowState = { step: 'picking' } | { step: 'saving'; choice: Painting } | { step: 'save-failed'; choice: Painting; message: string } | { step: 'loading-grid' } | { step: 'grid-failed'; message: string } | { step: 'history'; picks: SavedPick[]; newestIsNew: boolean }`
+    - `type FlowAction = { type: 'pick'; painting: Painting } | { type: 'view-grid' } | { type: 'picks-loaded'; picks: SavedPick[] } | { type: 'failed'; message: string } | { type: 'retry' }`
+    - `flowReducer(state: FlowState, action: FlowAction): FlowState`. Any action not listed in the tests returns the same state object.
 
 - [ ] **Step 1: Write the failing tests.**
 
@@ -473,10 +478,14 @@ test("pick time uses the visitor's time zone, even across midnight", () =>
 // tests/mood-flow.test.mjs
 test("picking a painting starts saving it", ...);            // picking + pick → { step: "saving", choice }
 test("a second pick while saving is ignored", ...);          // saving + pick → same state object
-test("a saved pick shows the history", ...);                 // saving + saved → { step: "history", picks }
-test("a failed save keeps the chosen painting", ...);        // saving + save-failed → { step: "save-failed", choice, message }
+test("a saved pick shows the history with the newest marked", ...); // saving + picks-loaded → { step: "history", picks, newestIsNew: true }
+test("a failed save keeps the chosen painting", ...);        // saving + failed → { step: "save-failed", choice, message }
 test("try again re-saves the same painting", ...);           // save-failed + retry → { step: "saving", choice }
-test("a stray saved event while picking is ignored", ...);   // picking + saved → same state object
+test("a stray picks-loaded event while picking is ignored", ...); // picking + picks-loaded → same state object
+test("seeing the grid without picking loads it", ...);       // picking + view-grid → { step: "loading-grid" }
+test("a grid seen without a pick marks no newest pick", ...); // loading-grid + picks-loaded → { step: "history", picks, newestIsNew: false }
+test("a failed grid load can be retried", ...);              // loading-grid + failed → { step: "grid-failed", message }; then retry → { step: "loading-grid" }
+test("seeing the grid while saving is ignored", ...);        // saving + view-grid → same state object
 ```
 
 - [ ] **Step 2: Run them to watch them fail.** `npm test`: FAIL, with the three modules not found.
@@ -488,9 +497,9 @@ test("a stray saved event while picking is ignored", ...);   // picking + saved 
 - [ ] **Step 5: Build the pages.** Match the Global Constraints and the spec:
   - **`app/mood/page.tsx`** (server): renders fresh on every request (check the Next 16 caching docs). It calls `fetchFourPaintings()` and renders `<MoodFlow draw={result} />`.
   - **`app/mood/loading.tsx`:** the loading state from Task 6.
-  - **`MoodFlow.tsx`** (client): uses `useReducer(flowReducer, { step: 'picking' })`. On `saving`, it calls `savePick` and dispatches `saved` or `save-failed`. Try again on the museum states calls `router.refresh()`. It shows `UserButton` top-right.
+  - **`MoodFlow.tsx`** (client): uses `useReducer(flowReducer, { step: 'picking' })`. On `saving`, it calls `savePick`. On `loading-grid`, it calls `loadPicks`. Either result dispatches `picks-loaded` or `failed`. Try again on the museum states calls `router.refresh()`. **See your grid** on the museum-down and nothing-found states dispatches `view-grid`. It shows `UserButton` top-right.
   - **`PickScreen.tsx`:** a 2×2 grid of `<button>`s about 230px each. It must fit at 375px wide. Each has an `aria-label` of `Painting N of 4`, an `<img>` at width 400 with `alt` set to `altText ?? ''` and `object-fit: contain`, and the main color as background. While saving, the chosen one is highlighted, the others are dimmed, and the buttons are disabled. It also shows the empty, unavailable and save-failed states.
-  - **`HistoryGrid.tsx`:** CSS grid from `gridShape(picks.length)`. Each square is a focusable button with `data-pick-id={id}` and `aria-label={title}`, containing an `<img>` at width 200, `object-fit: cover`, with the main-color background. The last square is outlined.
+  - **`HistoryGrid.tsx`:** CSS grid from `gridShape(picks.length)`. Each square is a focusable button with `data-pick-id={id}` and `aria-label={title}`, containing an `<img>` at width 200, `object-fit: cover`, with the main-color background. The last square is outlined only when `newestIsNew` is true. With no picks, it shows `No picks yet.`
   - **The card:** hover, focus or tap shows it, positioned beside the square and flipped to stay on screen. It contains the image (400), title, artist, `dateDisplay` (left out when null), and `formatPickedAt(pickedAt)`.
   - **Images:** plain `<img>` with `// eslint-disable-next-line @next/next/no-img-element`. The museum's image server blocks the optimizer.
   - **Fallbacks:** a null color uses `hsl(0, 0%, 75%)`.
