@@ -15,7 +15,10 @@ export async function savePick(choice: Painting): Promise<SaveResult> {
 
   const supabase = await createServerSupabase();
   const { error } = await supabase.from("picks").insert(toInsert(choice));
-  if (error) return { ok: false, message: "Your pick couldn't be saved." };
+  if (error) {
+    console.error("savePick: insert failed:", error.code, error.message);
+    return { ok: false, message: "Your pick couldn't be saved." };
+  }
   return { ok: true };
 }
 
@@ -32,6 +35,9 @@ export async function loadPicks(): Promise<PicksResult> {
     .order("picked_at", { ascending: true })
     .order("id", { ascending: true })
     .returns<PickRow[]>();
-  if (error || !data) return { ok: false, message: "Your picks couldn't be loaded." };
+  if (error || !data) {
+    console.error("loadPicks: select failed:", error?.code, error?.message);
+    return { ok: false, message: "Your picks couldn't be loaded." };
+  }
   return { ok: true, picks: data.map(fromRow) };
 }

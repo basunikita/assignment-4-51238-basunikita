@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 import {
   AIC_USER_AGENT,
   colorCss,
@@ -10,6 +10,9 @@ import {
   isMuseumImageId,
   toPainting,
 } from "../lib/museum.ts";
+
+// Failures are logged on the server; capture the log so tests can check it and the output stays clean.
+const consoleError = mock.method(console, "error", () => {});
 
 const raw = {
   id: 81535,
@@ -266,4 +269,26 @@ test("an image server that never answers is a 502 after the timeout", async () =
   );
   const response = await fetchMuseumImage(IMAGE_ID, "200", { fetchImpl: server.fetchImpl, timeoutMs: 50 });
   assert.equal(response.status, 502);
+});
+
+test("a museum failure is logged on the server", async () => {
+  consoleError.mock.resetCalls();
+  const museum = fakeMuseum({ respond: () => new Response("<!DOCTYPE html>", { status: 403, headers: { "content-type": "text/html" } }) });
+  await fetchFourPaintings({ fetchImpl: museum.fetchImpl });
+  assert.equal(consoleError.mock.callCount(), 1);
+  assert.match(String(consoleError.mock.calls[0].arguments.join(" ")), /fetchFourPaintings.*403/);
+});
+
+test("a failed image is logged on the server with its ID", async () => {
+  consoleError.mock.resetCalls();
+  const server = fakeImageServer(() => new Response("<!DOCTYPE html>", { status: 403, headers: { "content-type": "text/html" } }));
+  await fetchMuseumImage(IMAGE_ID, "200", { fetchImpl: server.fetchImpl });
+  assert.equal(consoleError.mock.callCount(), 1);
+  assert.match(String(consoleError.mock.calls[0].arguments.join(" ")), new RegExp(`fetchMuseumImage.*${IMAGE_ID}.*403`));
+});
+
+test("a refused image ID isn't logged as a failure", async () => {
+  consoleError.mock.resetCalls();
+  await fetchMuseumImage("a/b", "200", { fetchImpl: fakeImageServer().fetchImpl });
+  assert.equal(consoleError.mock.callCount(), 0);
 });

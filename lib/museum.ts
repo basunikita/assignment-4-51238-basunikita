@@ -55,21 +55,30 @@ export async function fetchMuseumImage(
   const { fetchImpl = fetch, timeoutMs = 8000 } = options;
   if (!isMuseumImageId(imageId) || !IMAGE_WIDTHS.includes(width)) return new Response(null, { status: 404 });
 
-  const unavailable = () => new Response(null, { status: 502, headers: { "Cache-Control": "no-store" } });
+  const unavailable = (reason: unknown) => {
+    console.error("fetchMuseumImage: museum image unavailable:", imageId, width, describe(reason));
+    return new Response(null, { status: 502, headers: { "Cache-Control": "no-store" } });
+  };
   try {
     const upstream = await fetchImpl(`${IIIF_BASE}/${imageId}/full/${width},/0/default.jpg`, {
       headers: { "AIC-User-Agent": AIC_USER_AGENT },
       signal: AbortSignal.timeout(timeoutMs),
     });
     const contentType = upstream.headers.get("content-type") ?? "";
-    if (!upstream.ok || !contentType.startsWith("image/")) return unavailable();
+    if (!upstream.ok || !contentType.startsWith("image/")) {
+      return unavailable(`HTTP ${upstream.status} ${contentType}`);
+    }
     // A museum image at a given ID and size never changes, so browsers and Vercel can keep it.
     return new Response(upstream.body, {
       headers: { "Content-Type": contentType, "Cache-Control": `public, max-age=${ONE_YEAR_SECONDS}, immutable` },
     });
-  } catch {
-    return unavailable();
+  } catch (error) {
+    return unavailable(error);
   }
+}
+
+function describe(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
 }
 
 export function colorCss(color: Painting["color"]): string {
@@ -162,7 +171,8 @@ export async function fetchFourPaintings(
       .map((body) => toPainting(body.data?.[0]))
       .filter((painting): painting is Painting => painting !== null);
     return paintings.length === PAINTINGS_PER_OPEN ? { status: "ok", paintings } : { status: "empty" };
-  } catch {
+  } catch (error) {
+    console.error("fetchFourPaintings: museum unavailable:", describe(error));
     return { status: "unavailable" };
   }
 }
